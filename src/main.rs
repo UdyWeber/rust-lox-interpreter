@@ -2,6 +2,7 @@ use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
+use std::process::exit;
 
 #[derive(Debug, PartialEq)]
 #[allow(non_camel_case_types)]
@@ -88,6 +89,7 @@ struct Scanner {
     start: usize,
     current: usize,
     line: usize,
+    has_errors: bool,
 }
 
 impl Scanner {
@@ -98,6 +100,7 @@ impl Scanner {
             start: 0,
             current: 0,
             line: 1,
+            has_errors: false,
         }
     }
 
@@ -108,7 +111,19 @@ impl Scanner {
         }
 
         self.tokens.push(Token::new(TokenType::EOF, "", None, self.line));
+        self.print_tokens();
+
         return self.tokens;
+    }
+
+    fn print_tokens(&self) {
+        self.tokens
+            .iter()
+            .for_each(|t| println!("{}", t));
+
+        if self.has_errors {
+            exit(65);
+        }
     }
 
     fn advance(&mut self) -> char {
@@ -118,7 +133,7 @@ impl Scanner {
     }
 
     fn scan_token(&mut self) {
-        let c = self.advance();
+        let c = &self.advance();
 
         match c {
             '(' => self.add_token(TokenType::LEFT_PAREN, None),
@@ -165,23 +180,27 @@ impl Scanner {
             },
             '/' => {
                 if self.match_next('/') {
-                    while self.peek() != '\n' && !self.is_at_end() {
+                    while self.peek() != '\n' && !&self.is_at_end() {
                         self.advance();
                     }
-                    println!("Found comment: {}", self.source.get(self.start+2..self.current-1).unwrap());
-                    return
+                    println!("Found comment: {}", &self.source.get(&self.start + 2..&self.current - 1).unwrap());
+                    return;
                 }
                 self.add_token(TokenType::SLASH, None)
             },
             '\n' => {
-               self.line += 1
+                self.line += 1
             },
-             ' ' | '\r' | '\t' | _ => {}
+            ' ' | '\r' | '\t' => {},
+            _ => {
+                eprintln!("[line {}] Error: Unexpected character: {}", &self.line, c);
+                self.has_errors = true;
+            }
         }
     }
 
     fn peek(&self) -> char {
-        if self.is_at_end() {return '\0'}
+        if self.is_at_end() { return '\0'; }
         self.source
             .chars()
             .nth(self.current)
@@ -229,11 +248,7 @@ fn main() {
                 String::new()
             });
 
-            let tokenizer = Scanner::new(file_contents);
-            tokenizer
-                .scan_tokens()
-                .iter()
-                .for_each(|t| println!("{}", t))
+            Scanner::new(file_contents).scan_tokens();
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
