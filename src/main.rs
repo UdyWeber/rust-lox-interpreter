@@ -1,5 +1,5 @@
 use std::env;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Formatter, Pointer};
 use std::fs;
 use std::io::{self, Write};
 use std::process::exit;
@@ -57,22 +57,37 @@ pub enum TokenType {
     EOF,
 }
 
+enum Literal {
+    String(String),
+    Number(f32, usize),
+    NULL
+}
+
+impl Display for Literal {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            Literal::String(s) => {s.to_string()}
+            Literal::Number(f, p) => {format!("{:>.*}",p, f)}
+            Literal::NULL => {String::from("null")}
+        })
+    }
+}
+
 struct Token {
     token_type: TokenType,
     lexeme: String,
-    literal: Option<String>,
+    literal: Literal,
     line: usize,
 }
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        let literal = if self.literal.is_none() { String::from("null") } else { self.literal.clone().unwrap() };
-        write!(f, "{:?} {} {}", self.token_type, self.lexeme, literal)
+        write!(f, "{:?} {} {}", self.token_type, self.lexeme, self.literal.to_string())
     }
 }
 
 impl Token {
-    pub fn new(token_type: TokenType, lexeme: &str, literal: Option<String>, line: usize) -> Self {
+    pub fn new(token_type: TokenType, lexeme: &str, literal: Literal, line: usize) -> Self {
         Token {
             token_type,
             lexeme: String::from(lexeme),
@@ -109,7 +124,7 @@ impl Scanner {
             self.scan_token()
         }
 
-        self.tokens.push(Token::new(TokenType::EOF, "", None, self.line));
+        self.tokens.push(Token::new(TokenType::EOF, "", Literal::NULL, self.line));
         self.print_tokens();
 
         return self.tokens;
@@ -132,51 +147,51 @@ impl Scanner {
     }
 
     fn scan_token(&mut self) {
-        let c = &self.advance();
+        let c = self.advance();
 
         match c {
-            '(' => self.add_token(TokenType::LEFT_PAREN, None),
-            ')' => self.add_token(TokenType::RIGHT_PAREN, None),
-            '{' => self.add_token(TokenType::LEFT_BRACE, None),
-            '}' => self.add_token(TokenType::RIGHT_BRACE, None),
-            ',' => self.add_token(TokenType::COMMA, None),
-            '.' => self.add_token(TokenType::DOT, None),
-            '-' => self.add_token(TokenType::MINUS, None),
-            '+' => self.add_token(TokenType::PLUS, None),
-            ';' => self.add_token(TokenType::SEMICOLON, None),
-            '*' => self.add_token(TokenType::STAR, None),
+            '(' => self.add_token(TokenType::LEFT_PAREN, Literal::NULL),
+            ')' => self.add_token(TokenType::RIGHT_PAREN, Literal::NULL),
+            '{' => self.add_token(TokenType::LEFT_BRACE, Literal::NULL),
+            '}' => self.add_token(TokenType::RIGHT_BRACE, Literal::NULL),
+            ',' => self.add_token(TokenType::COMMA, Literal::NULL),
+            '.' => self.add_token(TokenType::DOT, Literal::NULL),
+            '-' => self.add_token(TokenType::MINUS, Literal::NULL),
+            '+' => self.add_token(TokenType::PLUS, Literal::NULL),
+            ';' => self.add_token(TokenType::SEMICOLON, Literal::NULL),
+            '*' => self.add_token(TokenType::STAR, Literal::NULL),
             '!' => {
                 let t_type = if self.match_next('=') {
                     TokenType::BANG_EQUAL
                 } else {
                     TokenType::BANG
                 };
-                self.add_token(t_type, None)
-            },
+                self.add_token(t_type, Literal::NULL)
+            }
             '=' => {
                 let t_type = if self.match_next('=') {
                     TokenType::EQUAL_EQUAL
                 } else {
                     TokenType::EQUAL
                 };
-                self.add_token(t_type, None)
-            },
+                self.add_token(t_type, Literal::NULL)
+            }
             '>' => {
                 let t_type = if self.match_next('=') {
                     TokenType::GREATER_EQUAL
                 } else {
                     TokenType::GREATER
                 };
-                self.add_token(t_type, None)
-            },
+                self.add_token(t_type, Literal::NULL)
+            }
             '<' => {
                 let t_type = if self.match_next('=') {
                     TokenType::LESS_EQUAL
                 } else {
                     TokenType::LESS
                 };
-                self.add_token(t_type, None)
-            },
+                self.add_token(t_type, Literal::NULL)
+            }
             '/' => {
                 if self.match_next('/') {
                     while self.peek() != '\n' && !self.is_at_end() {
@@ -186,32 +201,21 @@ impl Scanner {
                     // println!("Found comment: {}", &self.source.get(&self.start + 2..&self.current - 1).unwrap());
                     return;
                 }
-                self.add_token(TokenType::SLASH, None)
-            },
+                self.add_token(TokenType::SLASH, Literal::NULL)
+            }
             '"' => {
-                while self.peek() != '"' && !self.is_at_end() {
-                    if self.peek() == '\n' {
-                        self.line += 1;
-                    }
-                    self.advance();
-                }
-
-                if self.is_at_end() {
-                    self.has_errors = true;
-                    return self.fmt_error("Unterminated string.");
-                }
-
-                self.advance();
-                let literal = self.source.get(self.start+1..self.current-1);
-                self.add_token(TokenType::STRING, Some(String::from(literal.unwrap())));
-            },
+                self.handle_string();
+            }
             '\n' => {
                 self.line += 1
-            },
-            ' ' | '\r' | '\t' => {},
+            }
+            ' ' | '\r' | '\t' => {}
             _ => {
-                self.fmt_error(&format!("Unexpected character: {}", c));
-                self.has_errors = true;
+                if is_digit(c) {
+                    self.handle_number()
+                } else {
+                    self.fmt_error(&format!("Unexpected character: {}", c));
+                }
             }
         }
     }
@@ -226,10 +230,17 @@ impl Scanner {
             .unwrap()
     }
 
-    fn add_token(&mut self, token_type: TokenType, literal: Option<String>) {
+    fn peek_next(&self) -> char {
+        if self.current + 1 >= self.source.chars().count() { return '\0'; }
+        self.source
+            .chars()
+            .nth(self.current + 1)
+            .unwrap()
+    }
+
+    fn add_token(&mut self, token_type: TokenType, literal: Literal) {
         let lexeme = self.source.get(self.start..self.current).unwrap();
         let token = Token::new(token_type, lexeme, literal, self.line);
-
         self.tokens.push(token);
     }
 
@@ -245,13 +256,65 @@ impl Scanner {
         return true;
     }
 
-    fn fmt_error(&self, msg: &str) {
+    fn fmt_error(&mut self, msg: &str) {
         eprintln!("[line {}] Error: {}", self.line, msg);
+        self.has_errors = true;
+    }
+
+    fn handle_string(&mut self) {
+        while self.peek() != '"' && !self.is_at_end() {
+            if self.peek() == '\n' {
+                self.line += 1;
+            }
+            self.advance();
+        }
+
+        if self.is_at_end() {
+            return self.fmt_error("Unterminated string.");
+        }
+        self.advance();
+
+        let literal = self.source.get(self.start + 1..self.current - 1).unwrap();
+        self.add_token(TokenType::STRING, Literal::String(literal.to_string()));
+    }
+
+    fn handle_number(&mut self) {
+        // TODO: Remove later, just needed for codecrafters printing scheiße
+        let mut precision = 0;
+
+        while is_digit(self.peek()) {
+            self.advance();
+        }
+
+        // Checks if number has additional decimals
+        if self.peek() == '.' && is_digit(self.peek_next()) {
+            self.advance();
+
+            while is_digit(self.peek()) {
+                self.advance();
+                precision += 1;
+            }
+        }
+
+        // Tries to parse number
+        let source_num = self.source
+            .get(self.start..self.current)
+            .unwrap();
+        let parsed_num = source_num.parse::<f32>();
+        if parsed_num.is_err() {
+            return self.fmt_error(&format!("Parsing error on token: {}", source_num));
+        }
+
+        if precision == 0 { precision += 1; }
+        self.add_token(TokenType::NUMBER, Literal::Number(parsed_num.unwrap(), precision))
     }
 }
 
-// TODO: After implementing the lexer, create unit tests for each operation to make
-// that all cases are being covered
+fn is_digit(val: char) -> bool {
+    val >= '0' && val <= '9'
+}
+
+// TODO: After implementing the lexer, create unit tests for each operation to make that all cases are being covered
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -266,11 +329,12 @@ fn main() {
         "tokenize" => {
             writeln!(io::stderr(), "Logs from your program will appear here!").unwrap();
 
-            let file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
+            let mut file_contents = fs::read_to_string(filename).unwrap_or_else(|_| {
                 writeln!(io::stderr(), "Failed to read file {}", filename).unwrap();
                 String::new()
             });
-
+            // Fuck windows
+            file_contents = file_contents.replace("\r\n", "\n");
             Scanner::new(file_contents).scan_tokens();
         }
         _ => {
