@@ -195,15 +195,22 @@ impl Scanner {
                     }
                     self.advance();
                 }
-                let literal = self.source.get(self.start+1..self.current-1).unwrap();
-                self.add_token(TokenType::STRING, Some(String::from(literal)));
+
+                if self.is_at_end() {
+                    self.has_errors = true;
+                    return self.fmt_error("Unterminated string.");
+                }
+
+                self.advance();
+                let literal = self.source.get(self.start+1..self.current-1);
+                self.add_token(TokenType::STRING, Some(String::from(literal.unwrap())));
             },
             '\n' => {
                 self.line += 1
             },
             ' ' | '\r' | '\t' => {},
             _ => {
-                eprintln!("[line {}] Error: Unexpected character: {}", &self.line, c);
+                self.fmt_error(&format!("Unexpected character: {}", c));
                 self.has_errors = true;
             }
         }
@@ -236,6 +243,10 @@ impl Scanner {
 
         self.current += 1;
         return true;
+    }
+
+    fn fmt_error(&self, msg: &str) {
+        eprintln!("[line {}] Error: {}", self.line, msg);
     }
 }
 
