@@ -180,10 +180,11 @@ impl Scanner {
             },
             '/' => {
                 if self.match_next('/') {
-                    while self.peek() != '\n' && !&self.is_at_end() {
+                    while self.peek() != '\n' && !self.is_at_end() {
                         self.advance();
                     }
-                    println!("Found comment: {}", &self.source.get(&self.start + 2..&self.current - 1).unwrap());
+                    // Todo: Uncomment when finishing codecrafters stuff
+                    // println!("Found comment: {}", &self.source.get(&self.start + 2..&self.current - 1).unwrap());
                     return;
                 }
                 self.add_token(TokenType::SLASH, None)
@@ -200,7 +201,9 @@ impl Scanner {
     }
 
     fn peek(&self) -> char {
-        if self.is_at_end() { return '\0'; }
+        if self.is_at_end() {
+            return '\0';
+        }
         self.source
             .chars()
             .nth(self.current)
@@ -215,7 +218,7 @@ impl Scanner {
     }
 
     fn is_at_end(&self) -> bool {
-        self.current >= self.source.len()
+        self.current >= self.source.chars().count()
     }
 
     fn match_next(&mut self, char_expected: char) -> bool {
