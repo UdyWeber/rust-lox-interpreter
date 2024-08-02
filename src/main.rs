@@ -2,7 +2,6 @@ use std::env;
 use std::fmt::{Display, Formatter};
 use std::fs;
 use std::io::{self, Write};
-use crate::TokenType::UNEXPECTED;
 
 #[derive(Debug, PartialEq)]
 #[allow(non_camel_case_types)]
@@ -53,26 +52,8 @@ pub enum TokenType {
     VAR,
     WHILE,
 
+    // File terminators
     EOF,
-    UNEXPECTED,
-}
-
-impl From<char> for TokenType {
-    fn from(value: char) -> Self {
-        match value {
-            '(' => Self::LEFT_PAREN,
-            ')' => Self::RIGHT_PAREN,
-            '{' => Self::LEFT_BRACE,
-            '}' => Self::RIGHT_BRACE,
-            ',' => Self::COMMA,
-            '.' => Self::DOT,
-            '-' => Self::MINUS,
-            '+' => Self::PLUS,
-            ';' => Self::SEMICOLON,
-            '*' => Self::STAR,
-            _ => UNEXPECTED,
-        }
-    }
 }
 
 struct Token {
@@ -131,31 +112,80 @@ impl Scanner {
     }
 
     fn advance(&mut self) -> char {
-        let c = self.source
-            .chars()
-            .nth(self.current)
-            .unwrap();
+        let c = self.peek();
         self.current += 1;
         return c;
     }
 
     fn scan_token(&mut self) {
         let c = self.advance();
-        let token_type = TokenType::from(c);
 
         match c {
-            '(' => self.add_token(token_type, None),
-            ')' => self.add_token(token_type, None),
-            '{' => self.add_token(token_type, None),
-            '}' => self.add_token(token_type, None),
-            ',' => self.add_token(token_type, None),
-            '.' => self.add_token(token_type, None),
-            '-' => self.add_token(token_type, None),
-            '+' => self.add_token(token_type, None),
-            ';' => self.add_token(token_type, None),
-            '*' => self.add_token(token_type, None),
-            _ => {}
+            '(' => self.add_token(TokenType::LEFT_PAREN, None),
+            ')' => self.add_token(TokenType::RIGHT_PAREN, None),
+            '{' => self.add_token(TokenType::LEFT_BRACE, None),
+            '}' => self.add_token(TokenType::RIGHT_BRACE, None),
+            ',' => self.add_token(TokenType::COMMA, None),
+            '.' => self.add_token(TokenType::DOT, None),
+            '-' => self.add_token(TokenType::MINUS, None),
+            '+' => self.add_token(TokenType::PLUS, None),
+            ';' => self.add_token(TokenType::SEMICOLON, None),
+            '*' => self.add_token(TokenType::STAR, None),
+            '!' => {
+                let t_type = if self.match_next('=') {
+                    TokenType::BANG_EQUAL
+                } else {
+                    TokenType::BANG
+                };
+                self.add_token(t_type, None)
+            },
+            '=' => {
+                let t_type = if self.match_next('=') {
+                    TokenType::EQUAL_EQUAL
+                } else {
+                    TokenType::EQUAL
+                };
+                self.add_token(t_type, None)
+            },
+            '>' => {
+                let t_type = if self.match_next('=') {
+                    TokenType::GREATER_EQUAL
+                } else {
+                    TokenType::GREATER
+                };
+                self.add_token(t_type, None)
+            },
+            '<' => {
+                let t_type = if self.match_next('=') {
+                    TokenType::LESS_EQUAL
+                } else {
+                    TokenType::LESS
+                };
+                self.add_token(t_type, None)
+            },
+            '/' => {
+                if self.match_next('/') {
+                    while self.peek() != '\n' && !self.is_at_end() {
+                        self.advance();
+                    }
+                    println!("Found comment: {}", self.source.get(self.start+2..self.current-1).unwrap());
+                    return
+                }
+                self.add_token(TokenType::SLASH, None)
+            },
+            '\n' => {
+               self.line += 1
+            },
+             ' ' | '\r' | '\t' | _ => {}
         }
+    }
+
+    fn peek(&self) -> char {
+        if self.is_at_end() {return '\0'}
+        self.source
+            .chars()
+            .nth(self.current)
+            .unwrap()
     }
 
     fn add_token(&mut self, token_type: TokenType, literal: Option<String>) {
@@ -168,8 +198,18 @@ impl Scanner {
     fn is_at_end(&self) -> bool {
         self.current >= self.source.len()
     }
+
+    fn match_next(&mut self, char_expected: char) -> bool {
+        if self.is_at_end() { return false; }
+        if self.peek() != char_expected { return false; }
+
+        self.current += 1;
+        return true;
+    }
 }
 
+// TODO: After implementing the lexer, create unit tests for each operation to make
+// that all cases are being covered
 fn main() {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -189,14 +229,11 @@ fn main() {
                 String::new()
             });
 
-            if !file_contents.is_empty() {
-                let tokenizer = Scanner::new(file_contents);
-                for x in tokenizer.scan_tokens() {
-                    println!("{}", x);
-                }
-            } else {
-                println!("EOF  null"); // Placeholder, remove this line when implementing the scanner
-            }
+            let tokenizer = Scanner::new(file_contents);
+            tokenizer
+                .scan_tokens()
+                .iter()
+                .for_each(|t| println!("{}", t))
         }
         _ => {
             writeln!(io::stderr(), "Unknown command: {}", command).unwrap();
