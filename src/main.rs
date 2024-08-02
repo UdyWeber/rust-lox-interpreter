@@ -67,7 +67,6 @@ struct Token {
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let literal = if self.literal.is_none() { String::from("null") } else { self.literal.clone().unwrap() };
-
         write!(f, "{:?} {} {}", self.token_type, self.lexeme, literal)
     }
 }
@@ -188,6 +187,16 @@ impl Scanner {
                     return;
                 }
                 self.add_token(TokenType::SLASH, None)
+            },
+            '"' => {
+                while self.peek() != '"' && !self.is_at_end() {
+                    if self.peek() == '\n' {
+                        self.line += 1;
+                    }
+                    self.advance();
+                }
+                let literal = self.source.get(self.start+1..self.current-1).unwrap();
+                self.add_token(TokenType::STRING, Some(String::from(literal)));
             },
             '\n' => {
                 self.line += 1
