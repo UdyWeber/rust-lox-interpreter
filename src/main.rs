@@ -213,6 +213,8 @@ impl Scanner {
             _ => {
                 if is_digit(c) {
                     self.handle_number()
+                }else if is_alpha_numeric(c) {
+                    self.handle_identifier()
                 } else {
                     self.fmt_error(&format!("Unexpected character: {}", c));
                 }
@@ -238,8 +240,14 @@ impl Scanner {
             .unwrap()
     }
 
+    fn get_lexeme(&self) -> &str {
+        self.source
+            .get(self.start..self.current)
+            .unwrap()
+    }
+
     fn add_token(&mut self, token_type: TokenType, literal: Literal) {
-        let lexeme = self.source.get(self.start..self.current).unwrap();
+        let lexeme = self.get_lexeme();
         let token = Token::new(token_type, lexeme, literal, self.line);
         self.tokens.push(token);
     }
@@ -278,6 +286,35 @@ impl Scanner {
         self.add_token(TokenType::STRING, Literal::String(literal.to_string()));
     }
 
+    fn handle_identifier(&mut self) {
+        while is_alpha_numeric(self.peek()) {
+            self.advance();
+        }
+
+        let identifier = self.get_lexeme();
+        let token_type = match identifier {
+            "and" => TokenType::AND,
+            "class" => TokenType::CLASS,
+            "else" => TokenType::ELSE,
+            "false" => TokenType::FALSE,
+            "fun" => TokenType::FUN,
+            "for" => TokenType::FOR,
+            "if" => TokenType::IF,
+            "nil" => TokenType::NIL,
+            "or" => TokenType::OR,
+            "print" => TokenType::PRINT,
+            "return" => TokenType::RETURN,
+            "super" => TokenType::SUPER,
+            "this" => TokenType::THIS,
+            "true" => TokenType::TRUE,
+            "var" => TokenType::VAR,
+            "while" => TokenType::WHILE,
+            _ => TokenType::IDENTIFIER,
+        };
+
+        self.add_token(token_type, Literal::NULL)
+    }
+
     fn handle_number(&mut self) {
         // TODO: Remove later, just needed for codecrafters printing scheiße
         let mut precision = 0;
@@ -288,18 +325,25 @@ impl Scanner {
 
         // Checks if number has additional decimals
         if self.peek() == '.' && is_digit(self.peek_next()) {
+            let mut only_zero_decimals = true;
             self.advance();
 
             while is_digit(self.peek()) {
+                if self.peek() != '0' {
+                    only_zero_decimals = false;
+                }
+
                 self.advance();
                 precision += 1;
+            }
+
+            if only_zero_decimals {
+                precision = 1;
             }
         }
 
         // Tries to parse number
-        let source_num = self.source
-            .get(self.start..self.current)
-            .unwrap();
+        let source_num = self.get_lexeme();
         let parsed_num = source_num.parse::<f32>();
         if parsed_num.is_err() {
             return self.fmt_error(&format!("Parsing error on token: {}", source_num));
@@ -310,8 +354,18 @@ impl Scanner {
     }
 }
 
+fn is_alpha(c: char) -> bool {
+    return (c >= 'a' && c <= 'z')
+        || (c >= 'A' && c <= 'Z')
+        || c == '_';
+}
+
 fn is_digit(val: char) -> bool {
     val >= '0' && val <= '9'
+}
+
+fn is_alpha_numeric(c: char) -> bool {
+    return is_digit(c) || is_alpha(c)
 }
 
 // TODO: After implementing the lexer, create unit tests for each operation to make that all cases are being covered
