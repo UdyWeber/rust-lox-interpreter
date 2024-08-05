@@ -53,6 +53,10 @@ pub enum TokenType {
     VAR,
     WHILE,
 
+    // Comments
+    COMMENT,
+    COMMENT_BLOCK,
+
     // File terminators
     EOF,
 }
@@ -60,16 +64,26 @@ pub enum TokenType {
 enum Literal {
     String(String),
     Number(f32, usize),
-    NULL
+    NULL,
 }
 
 impl Display for Literal {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            Literal::String(s) => {s.to_string()}
-            Literal::Number(f, p) => {format!("{:>.*}",p, f)}
-            Literal::NULL => {String::from("null")}
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                Literal::String(s) => {
+                    s.to_string()
+                }
+                Literal::Number(f, p) => {
+                    format!("{:>.*}", p, f)
+                }
+                Literal::NULL => {
+                    String::from("null")
+                }
+            }
+        )
     }
 }
 
@@ -82,7 +96,13 @@ struct Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?} {} {}", self.token_type, self.lexeme, self.literal.to_string())
+        write!(
+            f,
+            "{:?} {} {}",
+            self.token_type,
+            self.lexeme,
+            self.literal.to_string()
+        )
     }
 }
 
@@ -124,16 +144,15 @@ impl Scanner {
             self.scan_token()
         }
 
-        self.tokens.push(Token::new(TokenType::EOF, "", Literal::NULL, self.line));
+        self.tokens
+            .push(Token::new(TokenType::EOF, "", Literal::NULL, self.line));
         self.print_tokens();
 
         return self.tokens;
     }
 
     fn print_tokens(&self) {
-        self.tokens
-            .iter()
-            .for_each(|t| println!("{}", t));
+        self.tokens.iter().for_each(|t| println!("{}", t));
 
         if self.has_errors {
             exit(65);
@@ -197,8 +216,21 @@ impl Scanner {
                     while self.peek() != '\n' && !self.is_at_end() {
                         self.advance();
                     }
-                    // Todo: Uncomment when finishing codecrafters stuff
-                    // println!("Found comment: {}", &self.source.get(&self.start + 2..&self.current - 1).unwrap());
+                    let comment = &self.source.get(self.start + 2..self.current).unwrap();
+                    self.add_token(TokenType::COMMENT, Literal::String(comment.to_string()));
+                    return;
+                } else if self.match_next('*') {
+                    while !(self.peek() == '*' && self.peek_next() == '/') && !self.is_at_end() {
+                        if self.peek() == '\n' {
+                            self.line += 1;
+                        }
+                        self.advance();
+                    }
+
+                    self.current += 2;
+
+                    let comment = &self.source.get(self.start + 2..self.current-2).unwrap();
+                    self.add_token(TokenType::COMMENT_BLOCK, Literal::String(comment.to_string()));
                     return;
                 }
                 self.add_token(TokenType::SLASH, Literal::NULL)
@@ -206,14 +238,12 @@ impl Scanner {
             '"' => {
                 self.handle_string();
             }
-            '\n' => {
-                self.line += 1
-            }
+            '\n' => self.line += 1,
             ' ' | '\r' | '\t' => {}
             _ => {
                 if is_digit(c) {
                     self.handle_number()
-                }else if is_alpha_numeric(c) {
+                } else if is_alpha_numeric(c) {
                     self.handle_identifier()
                 } else {
                     self.fmt_error(&format!("Unexpected character: {}", c));
@@ -226,24 +256,18 @@ impl Scanner {
         if self.is_at_end() {
             return '\0';
         }
-        self.source
-            .chars()
-            .nth(self.current)
-            .unwrap()
+        self.source.chars().nth(self.current).unwrap()
     }
 
     fn peek_next(&self) -> char {
-        if self.current + 1 >= self.source.chars().count() { return '\0'; }
-        self.source
-            .chars()
-            .nth(self.current + 1)
-            .unwrap()
+        if self.current + 1 >= self.source.chars().count() {
+            return '\0';
+        }
+        self.source.chars().nth(self.current + 1).unwrap()
     }
 
     fn get_lexeme(&self) -> &str {
-        self.source
-            .get(self.start..self.current)
-            .unwrap()
+        self.source.get(self.start..self.current).unwrap()
     }
 
     fn add_token(&mut self, token_type: TokenType, literal: Literal) {
@@ -257,8 +281,12 @@ impl Scanner {
     }
 
     fn match_next(&mut self, char_expected: char) -> bool {
-        if self.is_at_end() { return false; }
-        if self.peek() != char_expected { return false; }
+        if self.is_at_end() {
+            return false;
+        }
+        if self.peek() != char_expected {
+            return false;
+        }
 
         self.current += 1;
         return true;
@@ -349,15 +377,18 @@ impl Scanner {
             return self.fmt_error(&format!("Parsing error on token: {}", source_num));
         }
 
-        if precision == 0 { precision += 1; }
-        self.add_token(TokenType::NUMBER, Literal::Number(parsed_num.unwrap(), precision))
+        if precision == 0 {
+            precision += 1;
+        }
+        self.add_token(
+            TokenType::NUMBER,
+            Literal::Number(parsed_num.unwrap(), precision),
+        )
     }
 }
 
 fn is_alpha(c: char) -> bool {
-    return (c >= 'a' && c <= 'z')
-        || (c >= 'A' && c <= 'Z')
-        || c == '_';
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
 }
 
 fn is_digit(val: char) -> bool {
@@ -365,7 +396,7 @@ fn is_digit(val: char) -> bool {
 }
 
 fn is_alpha_numeric(c: char) -> bool {
-    return is_digit(c) || is_alpha(c)
+    return is_digit(c) || is_alpha(c);
 }
 
 // TODO: After implementing the lexer, create unit tests for each operation to make that all cases are being covered
